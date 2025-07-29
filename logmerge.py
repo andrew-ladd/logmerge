@@ -9,11 +9,14 @@ import collections
 import datetime
 import re
 import sys
+import os
 
 
 cloud_init_pattern = re.compile(r'(\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d,\d\d\d) ')
 iso8601_pattern = re.compile(r'(\d\d\d\d/\d\d/\d\d \d\d:\d\d:\d\d\.\d+) ')
 timestamp_pattern = re.compile(r'((\d+)(\.\d+)?) ')
+custom_pattern = re.compile(r'^ (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2},\d{3})')
+custom_format = '%Y-%m-%dT%H:%M:%S,%f'
 
 
 def make_argument_parser():
@@ -43,7 +46,11 @@ def parse_datetime(line):
     if custom_pattern:
         match = custom_pattern.match(line)
         if match:
-            entry_datetime = datetime.datetime.strptime(match.group(1), custom_format)
+            # Convert milliseconds to microseconds by padding with zeros
+            timestamp_str = match.group(1)
+            # Replace the 3-digit milliseconds with 6-digit microseconds
+            timestamp_str = timestamp_str.replace(',', '.') + '000'
+            entry_datetime = datetime.datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%S.%f')
             return entry_datetime
 
     match = iso8601_pattern.match(line)
@@ -173,6 +180,24 @@ def render(line, prefix_arg=None, color=-1):
     return "{}{}".format(pretext, line)
 
 
+def get_unique_filename(base_name):
+    """
+    Generate a unique filename by appending a monotonically increasing integer if the base name is taken.
+    :param base_name: The base name for the file
+    :return: A unique filename
+    """
+    if not os.path.exists(base_name):
+        return base_name
+
+    base, ext = os.path.splitext(base_name)
+    counter = 1
+    while True:
+        new_name = f"{base}{counter}{ext}"
+        if not os.path.exists(new_name):
+            return new_name
+        counter += 1
+
+
 def main():
     args = make_argument_parser().parse_args()
     if args.logfiles is None or len(args.logfiles) < 2:
@@ -186,8 +211,6 @@ def main():
     if args.regex:
         custom_pattern = re.compile(args.regex.encode().decode('unicode_escape'))
         custom_format = args.format
-    else:
-        custom_pattern, custom_format = None, None
 
     prefixes = collections.defaultdict(lambda: '')
     colorize = args.colorize if sys.stdout.isatty() else False
@@ -204,13 +227,16 @@ def main():
         index += 1
 
     merger = LogSet(args.logfiles)
-    while True:
-        try:
-            path, entry = merger.next_entry()
-        except EOFError:
-            exit(0)
-        for line in entry:
-            print(render(line, prefixes[path], colors[path]), end='')
+    output_file = get_unique_filename("merged.log")
+    with open(output_file, "w") as outfile:
+        while True:
+            try:
+                path, entry = merger.next_entry()
+            except EOFError:
+                print(f"Merged logs saved to {output_file}")
+                exit(0)
+            for line in entry:
+                outfile.write(render(line, prefixes[path], colors[path]))
 
 
 main()
