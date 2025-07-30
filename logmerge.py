@@ -36,6 +36,7 @@ def make_argument_parser():
     # parser.add_argument("--colors", help="List of colors for each log", required=False, nargs="+")
     parser.add_argument("-c", "--colorize", help="Color-code log output", required=False, action="store_true")
     parser.add_argument("-j", "--jamfcloud", help="Fetch JAMFSoftwareServer logs from a specified folder or zip file")
+    parser.add_argument("-o", "--output", help="Output filename prefix (default: merged)", default="merged")
     parser.add_argument('logfiles', nargs='*')
 
     return parser
@@ -232,7 +233,7 @@ def process_logs(args):
         index += 1
 
     merger = LogSet(args.logfiles)
-    output_file = get_unique_filename("merged.log")
+    output_file = get_unique_filename(f"{args.output}.log")
     with open(output_file, "w") as outfile:
         while True:
             try:
