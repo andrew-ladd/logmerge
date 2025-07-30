@@ -10,6 +10,9 @@ import datetime
 import re
 import sys
 import os
+import zipfile
+import tempfile
+import shutil
 
 
 cloud_init_pattern = re.compile(r'(\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d,\d\d\d) ')
@@ -32,7 +35,8 @@ def make_argument_parser():
     parser.add_argument("-f", "--format", help="strptime format to convert the captured timestamp")
     # parser.add_argument("--colors", help="List of colors for each log", required=False, nargs="+")
     parser.add_argument("-c", "--colorize", help="Color-code log output", required=False, action="store_true")
-    parser.add_argument('logfiles', nargs='+')
+    parser.add_argument("-j", "--jamfcloud", help="Fetch JAMFSoftwareServer logs from a specified folder or zip file")
+    parser.add_argument('logfiles', nargs='*')
 
     return parser
 
@@ -198,8 +202,10 @@ def get_unique_filename(base_name):
         counter += 1
 
 
-def main():
-    args = make_argument_parser().parse_args()
+def process_logs(args):
+    """Process the log files and create merged output"""
+    global custom_pattern, custom_format
+    
     if args.logfiles is None or len(args.logfiles) < 2:
         print("Requires at least two logfiles")
         exit(1)
@@ -207,7 +213,6 @@ def main():
         print("Requires both timestamp regex and format or none")
         exit(1)
 
-    global custom_pattern, custom_format
     if args.regex:
         custom_pattern = re.compile(args.regex.encode().decode('unicode_escape'))
         custom_format = args.format
@@ -234,9 +239,80 @@ def main():
                 path, entry = merger.next_entry()
             except EOFError:
                 print(f"Merged logs saved to {output_file}")
-                exit(0)
+                break
             for line in entry:
                 outfile.write(render(line, prefixes[path], colors[path]))
+
+
+def handle_jamfcloud_option(args):
+    """Handle the -j/--jamfcloud option for JAMF log processing"""
+    base_folder = args.jamfcloud
+    temp_dir = None
+    
+    try:
+        # Check if it's a zip file
+        if base_folder.endswith('.zip') and os.path.isfile(base_folder):
+            # Extract zip to temporary directory
+            temp_dir = tempfile.mkdtemp()
+            try:
+                with zipfile.ZipFile(base_folder, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                # Find the extracted folder (should be the first directory in temp_dir)
+                extracted_contents = os.listdir(temp_dir)
+                if len(extracted_contents) == 1 and os.path.isdir(os.path.join(temp_dir, extracted_contents[0])):
+                    base_folder = os.path.join(temp_dir, extracted_contents[0])
+                else:
+                    base_folder = temp_dir
+                print(f"Extracted zip to: {base_folder}")
+            except zipfile.BadZipFile:
+                print(f"Error: {args.jamfcloud} is not a valid zip file")
+                if temp_dir:
+                    shutil.rmtree(temp_dir)
+                exit(1)
+        else:
+            # It's a regular directory, strip trailing slash
+            base_folder = base_folder.rstrip('/')
+        
+        # Set up the log file paths
+        primary_log = os.path.join(base_folder, 'primary/JAMFSoftwareServer/JAMFSoftwareServer_0729_0002.log')
+        secondary_log = os.path.join(base_folder, 'secondary/JAMFSoftwareServer/JAMFSoftwareServer_0729_0030.log')
+        
+        # Check if files exist
+        if not os.path.exists(primary_log):
+            print(f"Error: Primary log file not found: {primary_log}")
+            if temp_dir:
+                shutil.rmtree(temp_dir)
+            exit(1)
+        if not os.path.exists(secondary_log):
+            print(f"Error: Secondary log file not found: {secondary_log}")
+            if temp_dir:
+                shutil.rmtree(temp_dir)
+            exit(1)
+            
+        args.logfiles = [primary_log, secondary_log]
+        
+        # Process the logs
+        process_logs(args)
+        
+    finally:
+        # Clean up temporary directory if it was created
+        if temp_dir:
+            shutil.rmtree(temp_dir)
+            print(f"Cleaned up temporary directory: {temp_dir}")
+
+
+def main():
+    global custom_pattern, custom_format
+    
+    args = make_argument_parser().parse_args()
+    
+    # Handle JAMF cloud option
+    if args.jamfcloud:
+        handle_jamfcloud_option(args)
+        exit(0)
+    
+    # Handle regular log file processing
+    process_logs(args)
 
 
 main()
