@@ -44,6 +44,42 @@ python3 logmerge.py app.log system.log error.log
 - `-r, --regex REGEX` - Regex to match and capture the entire timestamp (must be used with `-f`)
 - `-f, --format FORMAT` - strptime format to convert the captured timestamp (must be used with `-r`)
 - `-c, --colorize` - Color-code log output (automatically disabled when output is not a TTY)
+- `-j, --jamfcloud FOLDER_OR_ZIP` - Combine Primary and Secondary node JAMFSoftwareServer logs from a specified folder or zip file
+
+### JAMF Cloud Log Processing
+
+The `-j/--jamfcloud` option provides a convenient way to process JAMF Pro cloud logs. This option automatically extracts and merges the JAMFSoftwareServer logs from both primary and secondary servers.
+
+**Process a zip file:**
+
+```bash
+python3 logmerge.py -j logs.zip
+```
+
+**Process an extracted folder:**
+
+```bash
+python3 logmerge.py -j /path/to/extracted/folder
+```
+
+When using this option, the script will:
+
+1. If given a zip file, extract it to a temporary directory
+2. Locate the JAMFSoftwareServer logs in both `primary/` and `secondary/` folders
+3. Merge the logs chronologically
+4. Clean up any temporary files automatically
+
+The expected folder structure is:
+
+```text
+folder/
+├── primary/
+│   └── JAMFSoftwareServer/
+│       └── JAMFSoftwareServer_MMDD_NNNN.log
+└── secondary/
+    └── JAMFSoftwareServer/
+        └── JAMFSoftwareServer_MMDD_NNNN.log
+```
 
 ### Examples
 
